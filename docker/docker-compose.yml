@@ -1,0 +1,66 @@
+# ============================================================
+# docker-compose.yml — SAM3 Inference Server on Jetson Orin
+#
+# Tested on: JetPack 6.2.1 / L4T R36.4.3
+#
+# Usage:
+#   docker compose up -d          # start in background
+#   docker compose logs -f        # follow logs
+#   docker compose down           # stop
+#
+# Before starting, place your sam3.pt at ./models/sam3.pt
+# ============================================================
+
+services:
+  sam3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: sam3-jetson:latest
+    container_name: sam3
+
+    # ── NVIDIA GPU access ────────────────────────────────────
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Point to mounted weights file
+      - SAM3_MODEL_PATH=/app/models/sam3.pt
+      # Disable tokenizers parallelism warning
+      - TOKENIZERS_PARALLELISM=false
+
+    # ── Port: accessible from anywhere on the network ────────
+    ports:
+      - "8000:8000"       # FastAPI REST
+      - "8001:8001"       # reserved for future WebSocket / streaming
+
+    # ── Volumes ──────────────────────────────────────────────
+    volumes:
+      # Put your sam3.pt in ./models/ on the host
+      - ./models:/app/models:ro
+      # Persistent output storage (optional)
+      - ./outputs:/app/outputs
+
+    # ── Memory settings for Jetson ───────────────────────────
+    # Jetson shares CPU/GPU memory — no hard mem limit here,
+    # but we cap shared memory for multiprocessing
+    shm_size: "2gb"
+
+    # ── Restart policy ───────────────────────────────────────
+    restart: unless-stopped
+
+    # ── Healthcheck ──────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s   # model loading takes time on Jetson
+
+    # ── Logging ──────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
