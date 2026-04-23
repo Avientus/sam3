@@ -1,6 +1,5 @@
 # ============================================================
 # docker-compose.yml — SAM3 Inference Server on Jetson Orin
-#
 # Tested on: JetPack 6.2.1 / L4T R36.4.3
 #
 # Usage:
@@ -21,30 +20,34 @@ services:
     container_name: sam3
 
     # ── NVIDIA GPU access ────────────────────────────────────
+    # Jetson uses unified memory — nvmap/tegra devices must be
+    # passed through explicitly for CUDA to initialise.
     runtime: nvidia
+    privileged: true          # required for nvmap on Jetson
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Point to mounted weights file
       - SAM3_MODEL_PATH=/app/models/sam3.pt
-      # Disable tokenizers parallelism warning
       - TOKENIZERS_PARALLELISM=false
+
+    # ── Jetson-specific device nodes ─────────────────────────
+    devices:
+      - /dev/nvmap:/dev/nvmap
+      - /dev/dri:/dev/dri
 
     # ── Port: accessible from anywhere on the network ────────
     ports:
-      - "8000:8000"       # FastAPI REST
-      - "8001:8001"       # reserved for future WebSocket / streaming
+      - "8000:8000"
+      - "8001:8001"
 
     # ── Volumes ──────────────────────────────────────────────
     volumes:
-      # Put your sam3.pt in ./models/ on the host
       - ./models:/app/models:ro
-      # Persistent output storage (optional)
       - ./outputs:/app/outputs
+      # Lets the NVIDIA runtime identify the Jetson board
+      - /etc/nv_tegra_release:/etc/nv_tegra_release:ro
 
     # ── Memory settings for Jetson ───────────────────────────
-    # Jetson shares CPU/GPU memory — no hard mem limit here,
-    # but we cap shared memory for multiprocessing
     shm_size: "2gb"
 
     # ── Restart policy ───────────────────────────────────────
@@ -56,7 +59,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s   # model loading takes time on Jetson
+      start_period: 90s
 
     # ── Logging ──────────────────────────────────────────────
     logging:
