@@ -2,11 +2,9 @@
 # SAM3 on Jetson Orin — Docker Image
 # Tested on: JetPack 6.2.1 / L4T R36.4.3
 #
-# Base image: dustynv/pytorch:2.8-r36.4-cu128-24.04
-#   - Ubuntu 24.04, CUDA 12.8, PyTorch 2.8, Python 3.10
+# Base image: dustynv/pytorch:2.7-r36.4.0-cu128-24.04
+#   - Ubuntu 24.04, CUDA 12.8, PyTorch 2.7, Python 3.12
 #   - Compatible with ALL L4T R36.4.x boards (r36.4.0 → r36.4.3)
-#   - Note: dusty-nv only publishes r36.4.0 tagged images but
-#     they run on r36.4.3 (JetPack 6.2.1) without issues
 #
 # Exposes a FastAPI REST server on port 8000
 # ============================================================
@@ -36,8 +34,14 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# ── Pin numpy to avoid version conflicts ────────────────────
-RUN pip3 install --no-cache-dir numpy==1.26.4
+# ── Force PyPI as the pip index for all subsequent installs ─
+# The base image sets PIP_INDEX_URL to pypi.jetson-ai-lab.dev
+# which is unreachable during docker build. Override it here.
+ENV PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_EXTRA_INDEX_URL=
+
+# ── numpy: 1.26.x doesn't support Python 3.12, use 2.x ─────
+RUN pip3 install --no-cache-dir "numpy>=2.0.0,<2.2.0"
 
 # ── Ultralytics (includes SAM3 integration) ─────────────────
 RUN pip3 install --no-cache-dir "ultralytics>=8.3.237"
