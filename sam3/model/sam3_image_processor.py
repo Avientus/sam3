@@ -53,6 +53,7 @@ class Sam3Processor:
 
         image = v2.functional.to_image(image).to(self.device)
         image = self.transform(image).unsqueeze(0)
+        image = image.to(next(self.model.parameters()).dtype)
 
         state["original_height"] = height
         state["original_width"] = width
@@ -92,7 +93,7 @@ class Sam3Processor:
             self.transform(v2.functional.to_image(image).to(self.device))
             for image in images
         ]
-        images = torch.stack(images, dim=0)
+        images = torch.stack(images, dim=0).to(next(self.model.parameters()).dtype)
         state["backbone_out"] = self.model.backbone.forward_image(images)
         inst_interactivity_en = self.model.inst_interactive_predictor is not None
         if inst_interactivity_en and "sam2_backbone_out" in state["backbone_out"]:
@@ -190,14 +191,12 @@ class Sam3Processor:
 
         out_bbox = outputs["pred_boxes"]
         out_logits = outputs["pred_logits"]
-        out_masks = outputs["pred_masks"]
         out_probs = out_logits.sigmoid()
         presence_score = outputs["presence_logit_dec"].sigmoid().unsqueeze(1)
         out_probs = (out_probs * presence_score).squeeze(-1)
 
         keep = out_probs > self.confidence_threshold
         out_probs = out_probs[keep]
-        out_masks = out_masks[keep]
         out_bbox = out_bbox[keep]
 
         # convert to [x0, y0, x1, y1] format
@@ -208,15 +207,20 @@ class Sam3Processor:
         scale_fct = torch.tensor([img_w, img_h, img_w, img_h]).to(self.device)
         boxes = boxes * scale_fct[None, :]
 
-        out_masks = interpolate(
-            out_masks.unsqueeze(1),
-            (img_h, img_w),
-            mode="bilinear",
-            align_corners=False,
-        ).sigmoid()
-
-        state["masks_logits"] = out_masks
-        state["masks"] = out_masks > 0.5
         state["boxes"] = boxes
         state["scores"] = out_probs
+
+        if "pred_masks" in outputs:
+            out_masks = outputs["pred_masks"][keep]
+            out_masks = interpolate(
+                out_masks.unsqueeze(1),
+                (img_h, img_w),
+                mode="bilinear",
+                align_corners=False,
+            ).sigmoid()
+            state["masks_logits"] = out_masks
+            state["masks"] = out_masks > 0.5
+        else:
+            state["masks_logits"] = None
+            state["masks"] = None
         return state
