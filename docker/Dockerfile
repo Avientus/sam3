@@ -11,7 +11,7 @@
 # Exposes a FastAPI REST server on port 8000
 # ============================================================
 
-FROM dustynv/pytorch:2.8-r36.4-cu128-24.04
+FROM dustynv/pytorch:2.7-r36.4.0-cu128-24.04
 
 LABEL maintainer="you"
 LABEL description="SAM3 inference server for Jetson Orin"

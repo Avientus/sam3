@@ -50,7 +50,7 @@ fi
 # dusty-nv publishes r36.4.0 images which are compatible with ALL R36.4.x
 # New-style tag: dustynv/pytorch:2.8-r36.4-cu128-24.04
 #   (Ubuntu 24.04, CUDA 12.8, PyTorch 2.8)
-info "Base image: dustynv/pytorch:2.8-r36.4-cu128-24.04"
+info "Base image: dustynv/pytorch:2.7-r36.4.0-cu128-24.04"
 info "Compatible with your JetPack 6.2.1 / L4T R36.4.3"
 
 # ── 7. Expand swap (critical for Orin boards) ────────────────
@@ -70,7 +70,7 @@ fi
 
 # ── 8. Build the Docker image ────────────────────────────────
 info "Building SAM3 Docker image (this may take 10-20 min first time)..."
-info "Base: dustynv/pytorch:2.8-r36.4-cu128-24.04 (~6 GB pull on first run)"
+info "Base: dustynv/pytorch:2.7-r36.4.0-cu128-24.04 (~6 GB pull on first run)"
 docker compose build
 
 # ── 9. Start the container ───────────────────────────────────
