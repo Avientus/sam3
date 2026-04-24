@@ -1,0 +1,72 @@
+# ============================================================
+# SAM3 on PC — Docker Image (x86_64)
+# Tested on: Ubuntu 22.04 / 24.04, any NVIDIA GPU
+#
+# Base: python:3.12-slim-bookworm (Debian 12)
+# PyTorch wheels bundle their own CUDA 12.4 runtime, so no
+# nvidia/cuda base image is needed — just the host driver.
+#
+# Exposes a FastAPI REST server on port 8000
+# ============================================================
+
+FROM python:3.12-slim-bookworm
+
+LABEL maintainer="you"
+LABEL description="SAM3 inference server for PC (x86_64)"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# ── System deps ─────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    wget \
+    curl \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Upgrade pip ─────────────────────────────────────────────
+RUN pip install --upgrade pip
+
+# ── PyTorch with bundled CUDA 12.4 runtime (no cuda base needed) ──
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# ── numpy 2.x for Python 3.12 ───────────────────────────────
+RUN pip install --no-cache-dir "numpy>=2.0.0,<2.2.0"
+
+# ── Ultralytics (includes SAM3 integration) ─────────────────
+RUN pip install --no-cache-dir "ultralytics>=8.3.237"
+
+# ── Fix CLIP package conflict for SAM3 text prompts ─────────
+RUN pip uninstall -y clip 2>/dev/null || true && \
+    pip install --no-cache-dir git+https://github.com/ultralytics/CLIP.git
+
+# ── FastAPI inference server dependencies ───────────────────
+RUN pip install --no-cache-dir \
+    fastapi==0.115.0 \
+    "uvicorn[standard]==0.30.6" \
+    python-multipart==0.0.9 \
+    Pillow>=10.0.0 \
+    opencv-python-headless>=4.8.0
+
+# ── App directory ───────────────────────────────────────────
+WORKDIR /app
+COPY server.py /app/server.py
+RUN mkdir -p /app/models /app/outputs
+
+# ── Healthcheck ─────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -1,0 +1,75 @@
+# ============================================================
+# docker-compose.pc.yml — SAM3 Inference Server on PC (x86_64)
+#
+# Usage (Compose v2 plugin — install with: sudo apt install docker-compose-plugin):
+#   docker compose -f docker-compose.pc.yml up --build -d
+#   docker compose -f docker-compose.pc.yml logs -f
+#   docker compose -f docker-compose.pc.yml down
+#
+# Usage (legacy docker-compose v1):
+#   docker-compose -f docker-compose.pc.yml up --build -d
+#
+# Requirements:
+#   - nvidia-container-toolkit installed on the host
+#     (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+#   - sam3.pt model placed at ./models/sam3.pt
+# ============================================================
+
+services:
+  sam3:
+    build:
+      context: .
+      dockerfile: Dockerfile.pc
+
+    image: sam3-pc:latest
+    container_name: sam3-pc
+
+    # ── NVIDIA GPU access ────────────────────────────────────
+    # runtime: nvidia works with both docker-compose v1 and v2.
+    # The deploy.resources block below is the v2/Swarm syntax;
+    # both can coexist — runtime takes effect in non-Swarm mode.
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - SAM3_MODEL_PATH=/app/models/sam3.pt
+      - TOKENIZERS_PARALLELISM=false
+
+    # ── Ports ───────────────────────────────────────────────
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+
+    # ── Volumes ─────────────────────────────────────────────
+    volumes:
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+
+    # ── Shared memory for large tensors ─────────────────────
+    shm_size: "2gb"
+
+    # ── Restart policy ──────────────────────────────────────
+    restart: unless-stopped
+
+    # ── Healthcheck ─────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    # ── Logging ─────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
