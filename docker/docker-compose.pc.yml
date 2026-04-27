@@ -42,7 +42,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - SAM3_MODEL_PATH=/app/models/sam3.pt
       - TOKENIZERS_PARALLELISM=false
-      - SAM3_COMPILE=1
+      - SAM3_COMPILE=0
 
     # ── Ports ───────────────────────────────────────────────
     ports:
@@ -53,6 +53,8 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./outputs:/app/outputs
+      - ./cache/torch:/root/.cache/torch
+      - ./cache/triton:/root/.triton
 
     # ── Shared memory for large tensors ─────────────────────
     shm_size: "2gb"
