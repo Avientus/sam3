@@ -56,7 +56,7 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
 # ── PyTorch with bundled CUDA 12.4 runtime (no cuda base needed) ──
 RUN pip install --no-cache-dir \
     torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu124
+    --index-url https://download.pytorch.org/whl/cu128
 
 # ── numpy <2 required by local sam3 package ─────────────────
 RUN pip install --no-cache-dir --ignore-installed "numpy>=1.26,<2"
