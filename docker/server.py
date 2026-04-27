@@ -95,6 +95,7 @@ def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int
     binary_masks = outputs.get("out_binary_masks")  # BxHxW
     boxes_xywh   = outputs.get("out_boxes_xywh")    # Nx4, normalized [0,1]
     obj_ids      = outputs.get("out_obj_ids", [])
+    obj_scores   = outputs.get("out_scores", outputs.get("out_obj_scores", []))
 
     if binary_masks is None:
         return detections
@@ -105,7 +106,8 @@ def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int
         mask = binary_masks[i]
         if not np.any(mask):
             continue
-        det: dict = {"obj_id": int(obj_id)}
+        score = float(obj_scores[i]) if i < len(obj_scores) else None
+        det: dict = {"obj_id": int(obj_id), "score": score}
         if boxes_xywh is not None and i < len(boxes_xywh):
             # Predictor returns normalized [0,1] — convert to pixels
             nx, ny, nw, nh = [float(v) for v in boxes_xywh[i]]
