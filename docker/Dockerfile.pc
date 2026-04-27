@@ -17,7 +17,8 @@ LABEL description="SAM3 inference server for PC (x86_64)"
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1
 
 # ── System deps + Python 3.12 ────────────────────────────────
 # Ubuntu 24.04 ships Python 3.12 as the default python3.
