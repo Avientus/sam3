@@ -46,6 +46,9 @@ DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
 
 _predictor = None
 
+# Use /dev/shm (RAM disk) when available to eliminate disk I/O on temp frames
+_TMP_DIR = "/dev/shm" if os.path.exists("/dev/shm") else None
+
 
 def get_predictor():
     global _predictor
@@ -67,10 +70,36 @@ def get_predictor():
     return _predictor
 
 
+def _warmup(predictor) -> None:
+    """Run one dummy inference to JIT-compile Triton kernels before serving requests."""
+    log.info("Running warmup inference to compile Triton kernels ...")
+    frame_dir = tempfile.mkdtemp(dir=_TMP_DIR)
+    try:
+        Image.new("RGB", (64, 64), 0).save(os.path.join(frame_dir, "00000.jpg"))
+        resp = predictor.handle_request({"type": "start_session", "resource_path": frame_dir})
+        sid  = resp["session_id"]
+        try:
+            predictor.handle_request({
+                "type": "add_prompt", "session_id": sid,
+                "frame_index": 0, "obj_id": 1,
+                "points": [[32, 32]], "point_labels": [1],
+            })
+            for _ in predictor.handle_stream_request({
+                "type": "propagate_in_video", "session_id": sid,
+            }):
+                pass
+        finally:
+            predictor.handle_request({"type": "close_session", "session_id": sid})
+    finally:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+    log.info("Warmup complete.")
+
+
 @app.on_event("startup")
 async def startup_event():
     try:
-        get_predictor()
+        predictor = get_predictor()
+        _warmup(predictor)
     except RuntimeError as e:
         log.warning(f"Could not pre-load model: {e}")
 
@@ -192,7 +221,7 @@ async def predict_image(
     img_w, img_h = pil_img.size
 
     # Treat the single image as a one-frame "video" in a temp directory
-    frame_dir = tempfile.mkdtemp()
+    frame_dir = tempfile.mkdtemp(dir=_TMP_DIR)
     try:
         pil_img.save(os.path.join(frame_dir, "00000.jpg"), format="JPEG")
 
@@ -265,7 +294,7 @@ async def predict_video(
         raise HTTPException(status_code=400, detail="Provide at least one of: text_prompt, points, or boxes.")
 
     video_bytes = await file.read()
-    frame_dir = tempfile.mkdtemp()
+    frame_dir = tempfile.mkdtemp(dir=_TMP_DIR)
     total_frames = 0
     fps = 0.0
 
