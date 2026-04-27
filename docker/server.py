@@ -92,7 +92,7 @@ def xywh_to_xyxy(box: list) -> list:
 def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int = 1) -> list:
     """Convert a propagate_in_video outputs dict into a list of detection dicts."""
     detections = []
-    log.debug("propagate outputs keys: %s", list(outputs.keys()))
+    log.info("propagate outputs keys: %s", list(outputs.keys()))
     binary_masks = outputs.get("out_binary_masks")  # BxHxW
     boxes_xywh   = outputs.get("out_boxes_xywh")    # Nx4, normalized [0,1]
     obj_ids      = outputs.get("out_obj_ids", [])
