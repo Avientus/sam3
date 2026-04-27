@@ -54,16 +54,13 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
 ENV PIP_INDEX_URL=https://pypi.org/simple
 ENV PIP_EXTRA_INDEX_URL=
 
-# ── numpy: 1.26.x doesn't support Python 3.12, use 2.x ─────
-RUN pip3 install --no-cache-dir "numpy>=2.0.0,<2.2.0"
+# ── numpy <2 required by local sam3 package ─────────────────
+RUN pip3 install --no-cache-dir "numpy>=1.26,<2"
 
-# ── Ultralytics (includes SAM3 integration) ─────────────────
-RUN pip3 install --no-cache-dir "ultralytics>=8.3.237"
-
-# ── Fix CLIP package conflict for SAM3 text prompts ─────────
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 uninstall -y clip 2>/dev/null || true && \
-    pip3 install --no-cache-dir git+https://github.com/ultralytics/CLIP.git
+# ── Local sam3 package ───────────────────────────────────────
+COPY sam3/ /app/sam3_src/sam3/
+COPY pyproject.toml /app/sam3_src/pyproject.toml
+RUN pip3 install --no-cache-dir /app/sam3_src
 
 # ── FastAPI inference server dependencies ───────────────────
 RUN pip3 install --no-cache-dir \
@@ -78,7 +75,7 @@ RUN pip3 install --no-cache-dir \
 WORKDIR /app
 
 # Copy server code
-COPY server.py /app/server.py
+COPY docker/server.py /app/server.py
 
 # Model weights directory — mount your sam3.pt here at runtime
 # or COPY it in if you have it locally:

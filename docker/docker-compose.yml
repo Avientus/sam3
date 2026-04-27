@@ -13,8 +13,8 @@
 services:
   sam3:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       network: host
 
     image: sam3-jetson:latest

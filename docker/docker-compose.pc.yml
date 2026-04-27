@@ -18,8 +18,8 @@
 services:
   sam3:
     build:
-      context: .
-      dockerfile: Dockerfile.pc
+      context: ..
+      dockerfile: docker/Dockerfile.pc
 
     image: sam3-pc:latest
     container_name: sam3-pc
