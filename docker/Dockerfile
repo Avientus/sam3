@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     wget \
     curl \
+    gnupg \
+    lsb-release \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -33,6 +35,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+
+# ── ROS 2 apt repo + packages ───────────────────────────────
+ENV ROS_DISTRO=jazzy
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+        http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+        | tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ros-${ROS_DISTRO}-vision-msgs \
+        ros-${ROS_DISTRO}-cv-bridge \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Force PyPI as the pip index for all subsequent installs ─
 # The base image sets PIP_INDEX_URL to pypi.jetson-ai-lab.dev
@@ -57,7 +71,8 @@ RUN pip3 install --no-cache-dir \
     "uvicorn[standard]==0.30.6" \
     python-multipart==0.0.9 \
     Pillow>=10.0.0 \
-    opencv-python-headless>=4.8.0
+    opencv-python-headless>=4.8.0 \
+    requests
 
 # ── App directory ───────────────────────────────────────────
 WORKDIR /app
