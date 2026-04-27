@@ -53,16 +53,13 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         ros-${ROS_DISTRO}-cv-bridge \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Upgrade pip ─────────────────────────────────────────────
-RUN pip install --upgrade pip
-
 # ── PyTorch with bundled CUDA 12.4 runtime (no cuda base needed) ──
 RUN pip install --no-cache-dir \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu124
 
 # ── numpy <2 required by local sam3 package ─────────────────
-RUN pip install --no-cache-dir "numpy>=1.26,<2"
+RUN pip install --no-cache-dir --ignore-installed "numpy>=1.26,<2"
 
 # ── Local sam3 package ───────────────────────────────────────
 COPY sam3/ /app/sam3_src/sam3/
