@@ -66,12 +66,6 @@ def get_predictor():
         warm_up=compile_model,
         use_fa3=False,  # FA3 requires Hopper (H100); disable for Jetson / consumer GPUs
     )
-    if DEVICE == "cuda":
-        try:
-            _predictor.model.bfloat16()
-            log.info("Model converted to BF16.")
-        except Exception as e:
-            log.warning(f"BF16 conversion failed, staying in FP32: {e}")
     log.info("SAM3 predictor loaded.")
     return _predictor
 
