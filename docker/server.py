@@ -110,6 +110,12 @@ def parse_outputs(outputs: dict, include_masks: bool) -> list:
             bxywh = [float(v) for v in boxes_xywh[i]]
             det["bbox_xywh"] = bxywh
             det["bbox_xyxy"] = xywh_to_xyxy(bxywh)
+        else:
+            ys, xs = np.where(mask > 0)
+            if len(xs) > 0:
+                x1, y1, x2, y2 = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+                det["bbox_xyxy"] = [x1, y1, x2, y2]
+                det["bbox_xywh"] = [x1, y1, x2 - x1, y2 - y1]
         if include_masks:
             det["mask_b64"] = mask_to_b64(mask)
         detections.append(det)
