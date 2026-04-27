@@ -106,7 +106,7 @@ def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int
         mask = binary_masks[i]
         if not np.any(mask):
             continue
-        score = float(obj_scores[i]) if i < len(obj_scores) else None
+        score = float(obj_scores[i]) if i < len(obj_scores) else 1.0
         det: dict = {"obj_id": int(obj_id), "score": score}
         if boxes_xywh is not None and i < len(boxes_xywh):
             # Predictor returns normalized [0,1] — convert to pixels
