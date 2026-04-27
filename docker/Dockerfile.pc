@@ -1,15 +1,15 @@
 # ============================================================
 # SAM3 on PC — Docker Image (x86_64)
-# Tested on: Ubuntu 22.04 / 24.04, any NVIDIA GPU
+# Tested on: Ubuntu 24.04, any NVIDIA GPU
 #
-# Base: python:3.12-slim-bookworm (Debian 12)
+# Base: ubuntu:24.04 (Noble) — required for ROS 2 Jazzy.
 # PyTorch wheels bundle their own CUDA 12.4 runtime, so no
 # nvidia/cuda base image is needed — just the host driver.
 #
 # Exposes a FastAPI REST server on port 8000
 # ============================================================
 
-FROM python:3.12-slim-bookworm
+FROM ubuntu:24.04
 
 LABEL maintainer="you"
 LABEL description="SAM3 inference server for PC (x86_64)"
@@ -19,8 +19,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# ── System deps ─────────────────────────────────────────────
+# ── System deps + Python 3.12 ────────────────────────────────
+# Ubuntu 24.04 ships Python 3.12 as the default python3.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
     git \
     wget \
     curl \
@@ -32,16 +36,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # ── ROS 2 apt repo + packages ───────────────────────────────
-# Uses Ubuntu Noble (24.04) repo — required for ROS2 Jazzy packages
-# even on Debian Bookworm hosts.
 ENV ROS_DISTRO=jazzy
 RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         -o /usr/share/keyrings/ros-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
-        http://packages.ros.org/ros2/ubuntu noble main" \
+        http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
         | tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
     apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-vision-msgs \
