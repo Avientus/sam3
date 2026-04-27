@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>sam3_ros2</name>
+  <version>1.0.0</version>
+  <description>ROS2 node that subscribes to a camera image topic, forwards frames to the SAM3 inference server, and publishes segmentation results.</description>
+  <maintainer email="you@example.com">you</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-requests</exec_depend>
+  <exec_depend>python3-pillow</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <test_depend>ament_pep8</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
