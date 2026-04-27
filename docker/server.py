@@ -44,20 +44,22 @@ MODEL_PATH   = os.environ.get("SAM3_MODEL_PATH", "/app/models/sam3.pt")
 SAM3_VERSION = os.environ.get("SAM3_VERSION", "sam3")
 DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
 
-_predictor = None
+_predictor       = None
+_image_predictor = None  # lightweight path for point/box image inference
 
 # Use /dev/shm (RAM disk) when available to eliminate disk I/O on temp frames
 _TMP_DIR = "/dev/shm" if os.path.exists("/dev/shm") else None
 
 
 def get_predictor():
-    global _predictor
+    global _predictor, _image_predictor
     if _predictor is not None:
         return _predictor
     if not Path(MODEL_PATH).exists():
         raise RuntimeError(f"Model not found at {MODEL_PATH}")
     log.info(f"Loading SAM3 predictor (version={SAM3_VERSION}) from {MODEL_PATH} ...")
     from sam3 import build_sam3_predictor
+    from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
     compile_model = os.environ.get("SAM3_COMPILE", "").lower() in ("1", "true")
     _predictor = build_sam3_predictor(
         checkpoint_path=MODEL_PATH,
@@ -66,6 +68,13 @@ def get_predictor():
         warm_up=compile_model,
         use_fa3=False,  # FA3 requires Hopper (H100); disable for Jetson / consumer GPUs
     )
+    # Wrap the already-loaded tracker for fast single-image point/box inference.
+    # No extra memory — reuses the same weights.
+    try:
+        _image_predictor = SAM3InteractiveImagePredictor(_predictor.model.tracker)
+        log.info("SAM3InteractiveImagePredictor ready (point/box fast path).")
+    except Exception as e:
+        log.warning(f"Could not create image predictor fast path: {e}")
     log.info("SAM3 predictor loaded.")
     return _predictor
 
@@ -163,6 +172,82 @@ def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int
     return detections
 
 
+# ── Inference helpers ────────────────────────────────────────
+
+def _predict_image_fast(img_np, img_w, img_h, points=None, point_labels=None,
+                        boxes=None, include_masks=False):
+    """SAM3InteractiveImagePredictor path — skips session/video overhead."""
+    import json
+    _image_predictor.set_image(img_np)
+    detections = []
+
+    if points:
+        pts  = np.array(json.loads(points), dtype=np.float32)
+        lbls = np.array(json.loads(point_labels) if point_labels else [1] * len(pts), dtype=np.int32)
+        masks, iou_preds, _ = _image_predictor.predict(
+            point_coords=pts, point_labels=lbls, multimask_output=False)
+        for i, (mask, score) in enumerate(zip(masks, iou_preds)):
+            detections.append(_mask_to_det(mask, float(score), i, img_w, img_h, include_masks))
+    else:
+        for i, box in enumerate(json.loads(boxes)):
+            masks, iou_preds, _ = _image_predictor.predict(
+                box=np.array(box, dtype=np.float32), multimask_output=False)
+            if len(masks):
+                detections.append(_mask_to_det(masks[0], float(iou_preds[0]), i, img_w, img_h, include_masks))
+
+    return detections
+
+
+def _mask_to_det(mask, score, obj_id, img_w, img_h, include_masks):
+    mask2d = mask.squeeze()
+    det: dict = {"obj_id": obj_id, "score": score}
+    ys, xs = np.where(mask2d > 0)
+    if len(xs):
+        mh, mw = mask2d.shape[-2], mask2d.shape[-1]
+        x1 = round(int(xs.min()) / mw * img_w)
+        y1 = round(int(ys.min()) / mh * img_h)
+        x2 = round(int(xs.max()) / mw * img_w)
+        y2 = round(int(ys.max()) / mh * img_h)
+        det["bbox_xyxy"] = [x1, y1, x2, y2]
+        det["bbox_xywh"] = [x1, y1, x2 - x1, y2 - y1]
+    if include_masks:
+        det["mask_b64"] = mask_to_b64(mask2d)
+    return det
+
+
+def _predict_image_session(pil_img, img_w, img_h, text_prompt=None, points=None,
+                            point_labels=None, boxes=None, include_masks=False):
+    """Session-based path — required for text prompts."""
+    import json
+    frame_dir = tempfile.mkdtemp(dir=_TMP_DIR)
+    try:
+        pil_img.save(os.path.join(frame_dir, "00000.jpg"), format="JPEG")
+        resp       = _predictor.handle_request({"type": "start_session", "resource_path": frame_dir})
+        session_id = resp["session_id"]
+        try:
+            prompt_req: dict = {"type": "add_prompt", "session_id": session_id, "frame_index": 0, "obj_id": 1}
+            if text_prompt:
+                prompt_req["text"] = text_prompt
+            elif points:
+                pts  = json.loads(points)
+                lbls = json.loads(point_labels) if point_labels else [1] * len(pts)
+                prompt_req["points"]       = pts
+                prompt_req["point_labels"] = lbls
+            else:
+                prompt_req["bounding_boxes"] = json.loads(boxes)
+            _predictor.handle_request(prompt_req)
+            detections = []
+            for response in _predictor.handle_stream_request({
+                "type": "propagate_in_video", "session_id": session_id, "output_prob_thresh": 0.5,
+            }):
+                detections.extend(parse_outputs(response.get("outputs", {}), include_masks, img_w, img_h))
+        finally:
+            _predictor.handle_request({"type": "close_session", "session_id": session_id})
+    finally:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+    return detections
+
+
 # ── Routes ───────────────────────────────────────────────────
 
 @app.get("/health")
@@ -219,49 +304,28 @@ async def predict_image(
         raise HTTPException(status_code=400, detail="Could not decode image.")
 
     img_w, img_h = pil_img.size
+    img_np = np.array(pil_img)  # HxWx3 RGB uint8
 
-    # Treat the single image as a one-frame "video" in a temp directory
-    frame_dir = tempfile.mkdtemp(dir=_TMP_DIR)
-    try:
-        pil_img.save(os.path.join(frame_dir, "00000.jpg"), format="JPEG")
+    get_predictor()  # ensure both predictors are loaded
+    t0 = time.time()
 
-        predictor = get_predictor()
-        t0 = time.time()
-
-        resp = predictor.handle_request({"type": "start_session", "resource_path": frame_dir})
-        session_id = resp["session_id"]
-
-        try:
-            prompt_req: dict = {"type": "add_prompt", "session_id": session_id, "frame_index": 0, "obj_id": 1}
-
-            if text_prompt:
-                prompt_req["text"] = text_prompt
-                prompt_type = "text"
-            elif points:
-                pts  = json.loads(points)
-                lbls = json.loads(point_labels) if point_labels else [1] * len(pts)
-                prompt_req["points"]       = pts
-                prompt_req["point_labels"] = lbls
-                prompt_type = "points"
-            else:
-                prompt_req["bounding_boxes"] = json.loads(boxes)
-                prompt_type = "boxes"
-
-            predictor.handle_request(prompt_req)
-
-            detections = []
-            for response in predictor.handle_stream_request({
-                "type":               "propagate_in_video",
-                "session_id":         session_id,
-                "output_prob_thresh": 0.5,
-            }):
-                detections.extend(parse_outputs(response.get("outputs", {}), include_masks, img_w, img_h))
-
-        finally:
-            predictor.handle_request({"type": "close_session", "session_id": session_id})
-
-    finally:
-        shutil.rmtree(frame_dir, ignore_errors=True)
+    if text_prompt:
+        # Text prompts require the full session pipeline
+        detections  = _predict_image_session(pil_img, img_w, img_h, text_prompt=text_prompt,
+                                             include_masks=include_masks)
+        prompt_type = "text"
+    elif _image_predictor is not None:
+        # Point/box: fast path via SAM3InteractiveImagePredictor (no session overhead)
+        detections  = _predict_image_fast(img_np, img_w, img_h,
+                                          points=points, point_labels=point_labels,
+                                          boxes=boxes, include_masks=include_masks)
+        prompt_type = "points" if points else "boxes"
+    else:
+        # Fallback to session path if fast predictor unavailable
+        detections  = _predict_image_session(pil_img, img_w, img_h,
+                                             points=points, point_labels=point_labels,
+                                             boxes=boxes, include_masks=include_masks)
+        prompt_type = "points" if points else "boxes"
 
     return JSONResponse(content={
         "detections":       detections,
