@@ -36,10 +36,9 @@ services:
       - /dev/nvmap:/dev/nvmap
       - /dev/dri:/dev/dri
 
-    # ── Port: accessible from anywhere on the network ────────
-    ports:
-      - "8000:8000"
-      - "8001:8001"
+    # ── Network: host mode avoids bridge iptables requirement ──
+    # Remove this and restore ports: if iptable_raw is loaded
+    network_mode: host
 
     # ── Volumes ──────────────────────────────────────────────
     volumes:
