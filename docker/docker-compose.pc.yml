@@ -42,6 +42,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - SAM3_MODEL_PATH=/app/models/sam3.pt
       - TOKENIZERS_PARALLELISM=false
+      - SAM3_COMPILE=1
 
     # ── Ports ───────────────────────────────────────────────
     ports:
