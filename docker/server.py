@@ -89,11 +89,11 @@ def xywh_to_xyxy(box: list) -> list:
     return [x, y, x + w, y + h]
 
 
-def parse_outputs(outputs: dict, include_masks: bool) -> list:
+def parse_outputs(outputs: dict, include_masks: bool, img_w: int = 1, img_h: int = 1) -> list:
     """Convert a propagate_in_video outputs dict into a list of detection dicts."""
     detections = []
     binary_masks = outputs.get("out_binary_masks")  # BxHxW
-    boxes_xywh   = outputs.get("out_boxes_xywh")    # Nx4
+    boxes_xywh   = outputs.get("out_boxes_xywh")    # Nx4, normalized [0,1]
     obj_ids      = outputs.get("out_obj_ids", [])
 
     if binary_masks is None:
@@ -107,13 +107,22 @@ def parse_outputs(outputs: dict, include_masks: bool) -> list:
             continue
         det: dict = {"obj_id": int(obj_id)}
         if boxes_xywh is not None and i < len(boxes_xywh):
-            bxywh = [float(v) for v in boxes_xywh[i]]
-            det["bbox_xywh"] = bxywh
-            det["bbox_xyxy"] = xywh_to_xyxy(bxywh)
+            # Predictor returns normalized [0,1] — convert to pixels
+            nx, ny, nw, nh = [float(v) for v in boxes_xywh[i]]
+            x1 = round(nx * img_w)
+            y1 = round(ny * img_h)
+            x2 = round((nx + nw) * img_w)
+            y2 = round((ny + nh) * img_h)
+            det["bbox_xyxy"] = [x1, y1, x2, y2]
+            det["bbox_xywh"] = [x1, y1, x2 - x1, y2 - y1]
         else:
             ys, xs = np.where(mask > 0)
             if len(xs) > 0:
-                x1, y1, x2, y2 = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+                mh, mw = mask.shape[-2], mask.shape[-1]
+                x1 = round(int(xs.min()) / mw * img_w)
+                y1 = round(int(ys.min()) / mh * img_h)
+                x2 = round(int(xs.max()) / mw * img_w)
+                y2 = round(int(ys.max()) / mh * img_h)
                 det["bbox_xyxy"] = [x1, y1, x2, y2]
                 det["bbox_xywh"] = [x1, y1, x2 - x1, y2 - y1]
         if include_masks:
@@ -215,7 +224,7 @@ async def predict_image(
                 "session_id":         session_id,
                 "output_prob_thresh": 0.5,
             }):
-                detections.extend(parse_outputs(response.get("outputs", {}), include_masks))
+                detections.extend(parse_outputs(response.get("outputs", {}), include_masks, img_w, img_h))
 
         finally:
             predictor.handle_request({"type": "close_session", "session_id": session_id})
@@ -269,6 +278,8 @@ async def predict_video(
         cap = cv2.VideoCapture(video_path)
         fps          = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        vid_w        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        vid_h        = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         idx = 0
         while idx < min(total_frames, max_frames):
@@ -309,7 +320,7 @@ async def predict_video(
             }):
                 frame_results.append({
                     "frame_idx":  response["frame_index"],
-                    "detections": parse_outputs(response.get("outputs", {}), include_masks),
+                    "detections": parse_outputs(response.get("outputs", {}), include_masks, vid_w, vid_h),
                 })
 
         finally:
